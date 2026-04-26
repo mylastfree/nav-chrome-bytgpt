@@ -132,6 +132,13 @@ export async function checkDashboardLinks(
   return results
 }
 
+export function dismissLinkCheckResult(
+  results: LinkCheckResult[],
+  linkId: string,
+): LinkCheckResult[] {
+  return results.filter((item) => item.linkId !== linkId)
+}
+
 function toResult(target: LinkCheckTarget, summary: LinkCheckSummary): LinkCheckResult {
   return {
     ...target,

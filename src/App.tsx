@@ -23,7 +23,7 @@ import {
 } from './dashboard'
 import { parseDashboardImport } from './importers'
 import type { ParsedDashboardImport } from './importers'
-import { checkDashboardLinks } from './linkChecker'
+import { checkDashboardLinks, dismissLinkCheckResult } from './linkChecker'
 import type { LinkCheckResult } from './linkChecker'
 import type { DashboardBackup, DashboardData, LinkItem } from './types'
 
@@ -780,6 +780,17 @@ function App() {
             onClick={() => deleteLinkDirect(item.groupId, item.linkId)}
           >
             删除
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() =>
+              setLinkCheckResults((current) =>
+                dismissLinkCheckResult(current, item.linkId),
+              )
+            }
+          >
+            确认正常
           </button>
           <button
             type="button"

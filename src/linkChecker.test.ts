@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { checkLinkUrl, classifyLinkResponse } from './linkChecker'
+import { checkLinkUrl, classifyLinkResponse, dismissLinkCheckResult } from './linkChecker'
 
 describe('link checker', () => {
   test('classifies successful and redirected responses as ok', () => {
@@ -36,5 +36,30 @@ describe('link checker', () => {
       }),
     ).resolves.toEqual({ status: 'ok', reason: '204' })
     expect(methods).toEqual(['HEAD', 'GET'])
+  })
+
+  test('dismisses one result without changing other check results', () => {
+    const results = [
+      {
+        linkId: 'a',
+        groupId: 'daily',
+        groupName: 'Daily',
+        title: 'A',
+        url: 'https://a.example',
+        status: 'broken' as const,
+        reason: '失效 404',
+      },
+      {
+        linkId: 'b',
+        groupId: 'daily',
+        groupName: 'Daily',
+        title: 'B',
+        url: 'https://b.example',
+        status: 'limited' as const,
+        reason: '受限 403',
+      },
+    ]
+
+    expect(dismissLinkCheckResult(results, 'a')).toEqual([results[1]])
   })
 })
