@@ -23,6 +23,41 @@ try {
     throw 'dist\assets exists. Keep JS/CSS in the root for this project.'
   }
 
+  $requiredFiles = @(
+    'manifest.json',
+    'background.js',
+    'index.html',
+    'favicon.svg',
+    'icons\icon16.png',
+    'icons\icon32.png',
+    'icons\icon48.png',
+    'icons\icon128.png'
+  )
+
+  foreach ($file in $requiredFiles) {
+    $path = Join-Path $dist $file
+    if (-not (Test-Path -LiteralPath $path)) {
+      throw "Required extension file is missing: dist\$file"
+    }
+  }
+
+  $prohibitedEntries = @(
+    'node_modules',
+    'src',
+    'release',
+    '.git',
+    '.superpowers',
+    '_worker.js',
+    '_headers'
+  )
+
+  foreach ($entry in $prohibitedEntries) {
+    $path = Join-Path $dist $entry
+    if (Test-Path -LiteralPath $path) {
+      throw "Unexpected entry in extension package: dist\$entry"
+    }
+  }
+
   if (-not (Test-Path -LiteralPath $release)) {
     New-Item -ItemType Directory -Path $release | Out-Null
   }
@@ -52,6 +87,7 @@ try {
   Write-Host "UNPACKED=$unpacked"
   Write-Host "ZIP=$zipPath"
   Write-Host "SHA256=$($hash.Hash)"
+  Write-Host "LOAD_UNPACKED_IN_CHROME=$unpacked"
 }
 finally {
   Pop-Location
