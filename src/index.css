@@ -578,6 +578,18 @@ button:focus-visible {
   align-items: center;
 }
 
+.quick-actions {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.group-tab:hover .quick-actions,
+.group-tab:focus-within .quick-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .group-tab.is-active .quick-icon-button {
   background: color-mix(in srgb, var(--primary-text), transparent 86%);
   color: var(--primary-text);
