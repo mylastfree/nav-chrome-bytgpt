@@ -12,6 +12,8 @@ import {
   clearLinkIcons,
   createEmptyGroup,
   createEmptyLink,
+  createGroupFromName,
+  createLinkFromInput,
   deleteLinks,
   faviconUrl,
   findDuplicateLinkIds,
@@ -97,12 +99,18 @@ type VisibleLink = {
   linkIndex: number
 }
 
-type QuickEditDraft =
+type GroupQuickEditDraft =
   | {
       kind: 'group'
       groupId: string
       name: string
     }
+  | {
+      kind: 'newGroup'
+      name: string
+    }
+
+type LinkQuickEditDraft =
   | {
       kind: 'link'
       groupId: string
@@ -111,6 +119,15 @@ type QuickEditDraft =
       url: string
       icon: string
     }
+  | {
+      kind: 'newLink'
+      groupId: string
+      title: string
+      url: string
+      icon: string
+    }
+
+type QuickEditDraft = GroupQuickEditDraft | LinkQuickEditDraft
 
 function formatStorageSize(bytes: number) {
   if (bytes < 1024) {
@@ -118,6 +135,26 @@ function formatStorageSize(bytes: number) {
   }
 
   return `${(bytes / 1024).toFixed(1)} KB`
+}
+
+function isGroupQuickEdit(draft: QuickEditDraft): draft is GroupQuickEditDraft {
+  return draft.kind === 'group' || draft.kind === 'newGroup'
+}
+
+function isLinkQuickEdit(draft: QuickEditDraft): draft is LinkQuickEditDraft {
+  return draft.kind === 'link' || draft.kind === 'newLink'
+}
+
+function quickEditTitle(draft: QuickEditDraft) {
+  if (draft.kind === 'newGroup') {
+    return '新增分组'
+  }
+
+  if (draft.kind === 'newLink') {
+    return '新增网站'
+  }
+
+  return draft.kind === 'group' ? '编辑分组' : '编辑网站'
 }
 
 function App() {
@@ -545,8 +582,39 @@ function App() {
     })
   }
 
+  function startQuickAddGroup() {
+    setQuickEdit({
+      kind: 'newGroup',
+      name: '',
+    })
+  }
+
+  function startQuickAddLink(groupId: string) {
+    setQuickEdit({
+      kind: 'newLink',
+      groupId,
+      title: '',
+      url: '',
+      icon: '',
+    })
+  }
+
   async function saveQuickEdit() {
     if (!dashboard || !quickEdit) {
+      return
+    }
+
+    if (quickEdit.kind === 'newGroup') {
+      const group = createGroupFromName(quickEdit.name)
+      const saved = await saveDirectDashboard({
+        ...dashboard,
+        groups: [...dashboard.groups, group],
+      })
+
+      if (saved) {
+        setActiveGroupId(group.id)
+        setQuickEdit(null)
+      }
       return
     }
 
@@ -571,6 +639,27 @@ function App() {
 
     if (!isSafeUrl(quickEdit.url)) {
       setStatus('只支持 http 或 https 地址')
+      return
+    }
+
+    if (quickEdit.kind === 'newLink') {
+      const link = createLinkFromInput(quickEdit)
+      const saved = await saveDirectDashboard({
+        ...dashboard,
+        groups: dashboard.groups.map((group) =>
+          group.id === quickEdit.groupId
+            ? {
+                ...group,
+                links: [...group.links, link],
+              }
+            : group,
+        ),
+      })
+
+      if (saved) {
+        setActiveGroupId(quickEdit.groupId)
+        setQuickEdit(null)
+      }
       return
     }
 
@@ -1655,6 +1744,16 @@ function App() {
                 </div>
               </div>
             ))}
+            <button
+              type="button"
+              className="group-tab group-add-tab"
+              onClick={startQuickAddGroup}
+              aria-label="新增分组"
+              title="新增分组"
+            >
+              <span className="add-card-plus">+</span>
+              <span className="add-card-text">新增分组</span>
+            </button>
           </div>
         </aside>
 
@@ -1931,6 +2030,24 @@ function App() {
                   </article>
                 ),
               )}
+              {!isEditing && !isGlobalSearch ? (
+                <article
+                  className={`link-card-shell add-link-card-shell is-color-${
+                    activeGroup.color ?? 'slate'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    className="link-card add-card"
+                    onClick={() => startQuickAddLink(activeGroup.id)}
+                    aria-label="新增网站"
+                    title="新增网站"
+                  >
+                    <span className="add-card-plus">+</span>
+                    <small className="add-card-text">新增网站</small>
+                  </button>
+                </article>
+              ) : null}
             </div>
 
             {isEditing ? (
@@ -1943,7 +2060,7 @@ function App() {
               </button>
             ) : null}
 
-            {visibleLinkItems.length === 0 ? (
+            {visibleLinkItems.length === 0 && (isEditing || query.trim()) ? (
               <section className="empty-panel">
                 {query.trim()
                   ? isGlobalSearch
@@ -1954,7 +2071,7 @@ function App() {
             ) : null}
           </section>
         ) : (
-          <section className="empty-panel">还没有分组，进入编辑模式后新增分组</section>
+          <section className="empty-panel">还没有分组，点击左侧 + 新增分组</section>
         )}
       </section>
 
@@ -1964,14 +2081,14 @@ function App() {
             className="quick-edit-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label={quickEdit.kind === 'group' ? '编辑分组' : '编辑网站'}
+            aria-label={quickEditTitle(quickEdit)}
             onSubmit={(event) => {
               event.preventDefault()
               void saveQuickEdit()
             }}
           >
             <div className="quick-edit-heading">
-              <h2>{quickEdit.kind === 'group' ? '编辑分组' : '编辑网站'}</h2>
+              <h2>{quickEditTitle(quickEdit)}</h2>
               <button
                 type="button"
                 className="quick-icon-button"
@@ -1983,14 +2100,14 @@ function App() {
               </button>
             </div>
 
-            {quickEdit.kind === 'group' ? (
+            {isGroupQuickEdit(quickEdit) ? (
               <label className="field-label">
                 分组名称
                 <input
                   value={quickEdit.name}
                   onChange={(event) =>
                     setQuickEdit((current) =>
-                      current?.kind === 'group'
+                      current && isGroupQuickEdit(current)
                         ? {
                             ...current,
                             name: event.target.value,
@@ -2002,7 +2119,7 @@ function App() {
                   autoFocus
                 />
               </label>
-            ) : (
+            ) : isLinkQuickEdit(quickEdit) ? (
               <>
                 <label className="field-label">
                   网站名称
@@ -2010,7 +2127,7 @@ function App() {
                     value={quickEdit.title}
                     onChange={(event) =>
                       setQuickEdit((current) =>
-                        current?.kind === 'link'
+                        current && isLinkQuickEdit(current)
                           ? {
                               ...current,
                               title: event.target.value,
@@ -2028,7 +2145,7 @@ function App() {
                     value={quickEdit.url}
                     onChange={(event) =>
                       setQuickEdit((current) =>
-                        current?.kind === 'link'
+                        current && isLinkQuickEdit(current)
                           ? {
                               ...current,
                               url: event.target.value,
@@ -2045,7 +2162,7 @@ function App() {
                     value={quickEdit.icon}
                     onChange={(event) =>
                       setQuickEdit((current) =>
-                        current?.kind === 'link'
+                        current && isLinkQuickEdit(current)
                           ? {
                               ...current,
                               icon: event.target.value,
@@ -2057,11 +2174,11 @@ function App() {
                     aria-label="图标地址"
                   />
                 </label>
-                {!isSafeUrl(quickEdit.url) ? (
+                {quickEdit.url.trim() && !isSafeUrl(quickEdit.url) ? (
                   <span className="field-error">只支持 http 或 https 地址</span>
                 ) : null}
               </>
-            )}
+            ) : null}
 
             <div className="row-actions modal-actions">
               <button type="submit" className="primary-button" disabled={isSaving}>

@@ -148,6 +148,29 @@ export function createEmptyLink(): LinkItem {
   }
 }
 
+export function createGroupFromName(name: string): LinkGroup {
+  return {
+    ...createEmptyGroup(),
+    name: name.trim() || '新分组',
+  }
+}
+
+export function createLinkFromInput(input: {
+  title: string
+  url: string
+  icon: string
+}): LinkItem {
+  const icon = input.icon.trim()
+
+  return {
+    id: createId('link'),
+    title: input.title.trim() || '新网站',
+    url: normalizeUrl(input.url),
+    icon: icon || undefined,
+    clickCount: 0,
+  }
+}
+
 export function moveItem<T>(items: T[], fromIndex: number, direction: -1 | 1) {
   const targetIndex = fromIndex + direction
 
