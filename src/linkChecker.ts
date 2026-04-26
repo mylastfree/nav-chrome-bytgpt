@@ -31,8 +31,31 @@ type LinkCheckTarget = {
   url: string
 }
 
+type ChromeRuntime = {
+  id?: string
+  lastError?: {
+    message?: string
+  }
+  sendMessage?: (message: unknown, callback: (response: unknown) => void) => void
+}
+
+type ChromeLike = {
+  runtime?: ChromeRuntime
+}
+
+type LinkStatusResponse =
+  | {
+      ok: true
+      status: number
+    }
+  | {
+      ok: false
+      error?: string
+    }
+
 const DEFAULT_CONCURRENCY = 5
 const DEFAULT_TIMEOUT_MS = 8000
+const CHECK_LINK_STATUS_MESSAGE = 'nav-bygpt:check-link-status'
 
 export function classifyLinkResponse(status: number): LinkCheckSummary {
   if (status >= 200 && status < 400) {
@@ -63,15 +86,14 @@ export async function checkLinkUrl(
   }
 
   const url = normalizeUrl(value)
-  const fetchImpl = options.fetchImpl ?? globalThis.fetch
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
 
-  if (typeof fetchImpl !== 'function') {
+  if (!hasStatusTransport(options.fetchImpl)) {
     return { status: 'broken', reason: '当前环境不支持检测' }
   }
 
   try {
-    const status = await fetchStatus(fetchImpl, url, 'HEAD', timeoutMs)
+    const status = await requestStatus(url, 'HEAD', timeoutMs, options.fetchImpl)
 
     if (status !== 405 && status !== 501) {
       return classifyLinkResponse(status)
@@ -83,7 +105,7 @@ export async function checkLinkUrl(
   }
 
   try {
-    const status = await fetchStatus(fetchImpl, url, 'GET', timeoutMs)
+    const status = await requestStatus(url, 'GET', timeoutMs, options.fetchImpl)
     return classifyLinkResponse(status)
   } catch (error) {
     return { status: 'broken', reason: isAbortError(error) ? '超时' : '网络错误' }
@@ -146,6 +168,80 @@ function toResult(target: LinkCheckTarget, summary: LinkCheckSummary): LinkCheck
   }
 }
 
+function hasStatusTransport(fetchImpl?: typeof fetch) {
+  return Boolean(fetchImpl || getExtensionRuntime() || globalThis.fetch)
+}
+
+async function requestStatus(
+  url: string,
+  method: 'HEAD' | 'GET',
+  timeoutMs: number,
+  fetchImpl?: typeof fetch,
+) {
+  const runtime = getExtensionRuntime()
+
+  if (!fetchImpl && runtime) {
+    return requestStatusFromBackground(runtime, url, method, timeoutMs)
+  }
+
+  const actualFetch = fetchImpl ?? globalThis.fetch
+  if (typeof actualFetch !== 'function') {
+    throw new Error('No link checker transport available')
+  }
+
+  return fetchStatus(actualFetch, url, method, timeoutMs)
+}
+
+function getExtensionRuntime() {
+  const chromeLike = (globalThis as typeof globalThis & { chrome?: ChromeLike }).chrome
+  const runtime = chromeLike?.runtime
+
+  return runtime?.id && typeof runtime.sendMessage === 'function' ? runtime : null
+}
+
+function requestStatusFromBackground(
+  runtime: ChromeRuntime,
+  url: string,
+  method: 'HEAD' | 'GET',
+  timeoutMs: number,
+) {
+  return new Promise<number>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      reject(createAbortError())
+    }, timeoutMs + 1000)
+
+    runtime.sendMessage?.(
+      {
+        type: CHECK_LINK_STATUS_MESSAGE,
+        url,
+        method,
+        timeoutMs,
+      },
+      (response) => {
+        globalThis.clearTimeout(timeout)
+
+        const error = runtime.lastError?.message
+        if (error) {
+          reject(new Error(error))
+          return
+        }
+
+        if (isLinkStatusResponse(response) && response.ok) {
+          resolve(response.status)
+          return
+        }
+
+        if (isLinkStatusResponse(response) && !response.ok) {
+          reject(new Error(response.error || 'Link check failed'))
+          return
+        }
+
+        reject(new Error('Link check failed'))
+      },
+    )
+  })
+}
+
 async function fetchStatus(
   fetchImpl: typeof fetch,
   url: string,
@@ -169,6 +265,27 @@ async function fetchStatus(
   }
 }
 
+function isLinkStatusResponse(value: unknown): value is LinkStatusResponse {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const response = value as Partial<LinkStatusResponse>
+  return response.ok === true
+    ? typeof response.status === 'number'
+    : response.ok === false
+}
+
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === 'AbortError'
+}
+
+function createAbortError() {
+  try {
+    return new DOMException('The operation was aborted.', 'AbortError')
+  } catch {
+    const error = new Error('The operation was aborted.')
+    error.name = 'AbortError'
+    return error
+  }
 }

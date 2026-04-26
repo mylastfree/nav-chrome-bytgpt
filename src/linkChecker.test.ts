@@ -1,7 +1,12 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { checkLinkUrl, classifyLinkResponse, dismissLinkCheckResult } from './linkChecker'
 
 describe('link checker', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
   test('classifies successful and redirected responses as ok', () => {
     expect(classifyLinkResponse(200)).toEqual({ status: 'ok', reason: '200' })
     expect(classifyLinkResponse(302)).toEqual({ status: 'ok', reason: '302' })
@@ -36,6 +41,37 @@ describe('link checker', () => {
       }),
     ).resolves.toEqual({ status: 'ok', reason: '204' })
     expect(methods).toEqual(['HEAD', 'GET'])
+  })
+
+  test('uses the Chrome extension background transport when available', async () => {
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 500 }))
+    const messages: unknown[] = []
+
+    vi.stubGlobal('fetch', fetchSpy)
+    vi.stubGlobal('chrome', {
+      runtime: {
+        id: 'extension-id',
+        sendMessage: (message: unknown, callback: (response: unknown) => void) => {
+          messages.push(message)
+          callback({ ok: true, status: 204 })
+        },
+      },
+    })
+
+    await expect(
+      checkLinkUrl('https://panel.bbn.one/server/bac077ef', {
+        timeoutMs: 1000,
+      }),
+    ).resolves.toEqual({ status: 'ok', reason: '204' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(messages).toEqual([
+      {
+        type: 'nav-bygpt:check-link-status',
+        url: 'https://panel.bbn.one/server/bac077ef',
+        method: 'HEAD',
+        timeoutMs: 1000,
+      },
+    ])
   })
 
   test('dismisses one result without changing other check results', () => {
