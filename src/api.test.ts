@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { LOCAL_DASHBOARD_KEY } from './dashboard'
-import { loadDashboard, saveDashboard } from './api'
+import { BACKUP_DASHBOARD_KEY, loadDashboard, saveDashboard, saveDashboardSnapshot } from './api'
 import type { DashboardData } from './types'
 
 function dashboardWith(url: string): DashboardData {
@@ -120,6 +120,21 @@ describe('local dashboard storage', () => {
 
     expect(result.mode).toBe('local')
     expect(stored.groups[0].links[0].url).toBe('https://example.com')
+  })
+
+  test('saves dashboard snapshots without creating history backups', async () => {
+    const chromeStore: Record<string, unknown> = {
+      [LOCAL_DASHBOARD_KEY]: dashboardWith('https://old.example.com'),
+    }
+
+    stubChromeStorage(chromeStore)
+
+    await saveDashboardSnapshot(dashboardWith('https://new.example.com'))
+
+    expect((chromeStore[LOCAL_DASHBOARD_KEY] as DashboardData).groups[0].links[0].url).toBe(
+      'https://new.example.com',
+    )
+    expect(chromeStore[BACKUP_DASHBOARD_KEY]).toBeUndefined()
   })
 
   test('rejects unsafe link URLs before saving', async () => {

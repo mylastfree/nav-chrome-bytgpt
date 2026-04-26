@@ -113,6 +113,7 @@ describe('import parsing', () => {
         title: 'GitHub',
         url: 'https://github.com',
         icon: 'https://example.com/github.png',
+        clickCount: 0,
       },
     ])
     expect(result.dashboard.groups[1].links[0]).toMatchObject({

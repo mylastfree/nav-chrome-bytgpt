@@ -5,6 +5,7 @@ import {
   loadDashboardBackups,
   saveDashboard,
   saveDashboardBackup,
+  saveDashboardSnapshot,
 } from './api'
 import {
   clearLinkIcons,
@@ -13,6 +14,7 @@ import {
   deleteLinks,
   faviconUrl,
   findDuplicateLinks,
+  incrementLinkClickCount,
   isSafeUrl,
   moveItem,
   moveLinksToGroup,
@@ -31,6 +33,21 @@ type VisibleLink = {
   linkIndex: number
 }
 
+type QuickEditDraft =
+  | {
+      kind: 'group'
+      groupId: string
+      name: string
+    }
+  | {
+      kind: 'link'
+      groupId: string
+      linkId: string
+      title: string
+      url: string
+      icon: string
+    }
+
 function App() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [query, setQuery] = useState('')
@@ -43,6 +60,7 @@ function App() {
   const [batchTargetGroupId, setBatchTargetGroupId] = useState('')
   const [backups, setBackups] = useState<DashboardBackup[]>([])
   const [pendingImport, setPendingImport] = useState<ParsedDashboardImport | null>(null)
+  const [quickEdit, setQuickEdit] = useState<QuickEditDraft | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   async function refreshBackups() {
@@ -222,6 +240,181 @@ function App() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  async function saveDirectDashboard(nextDashboard: DashboardData) {
+    setDashboard(nextDashboard)
+    setIsSaving(true)
+    setStatus('正在保存...')
+
+    try {
+      const result = await saveDashboard(nextDashboard)
+      setDashboard((current) =>
+        current
+          ? {
+              ...current,
+              updatedAt: result.updatedAt,
+            }
+          : current,
+      )
+      refreshBackups()
+      setStatus(result.mode === 'chrome' ? '已保存到 Chrome 本地存储' : '已保存到本机')
+      return true
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '保存失败')
+      return false
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function recordLinkClick(groupId: string, linkId: string) {
+    if (!dashboard) {
+      return
+    }
+
+    const nextDashboard = incrementLinkClickCount(dashboard, groupId, linkId)
+    setDashboard(nextDashboard)
+
+    void saveDashboardSnapshot(nextDashboard)
+      .then((result) => {
+        setDashboard((current) =>
+          current
+            ? {
+                ...current,
+                updatedAt: result.updatedAt,
+              }
+            : current,
+        )
+      })
+      .catch(() => {
+        setStatus('点击统计保存失败')
+      })
+  }
+
+  function startGroupQuickEdit(groupId: string) {
+    const group = dashboard?.groups.find((item) => item.id === groupId)
+
+    if (!group) {
+      return
+    }
+
+    setQuickEdit({
+      kind: 'group',
+      groupId,
+      name: group.name,
+    })
+  }
+
+  function startLinkQuickEdit(groupId: string, linkId: string) {
+    const link = dashboard?.groups
+      .find((group) => group.id === groupId)
+      ?.links.find((item) => item.id === linkId)
+
+    if (!link) {
+      return
+    }
+
+    setQuickEdit({
+      kind: 'link',
+      groupId,
+      linkId,
+      title: link.title,
+      url: link.url,
+      icon: link.icon || '',
+    })
+  }
+
+  async function saveQuickEdit() {
+    if (!dashboard || !quickEdit) {
+      return
+    }
+
+    if (quickEdit.kind === 'group') {
+      const saved = await saveDirectDashboard({
+        ...dashboard,
+        groups: dashboard.groups.map((group) =>
+          group.id === quickEdit.groupId
+            ? {
+                ...group,
+                name: quickEdit.name,
+              }
+            : group,
+        ),
+      })
+
+      if (saved) {
+        setQuickEdit(null)
+      }
+      return
+    }
+
+    if (!isSafeUrl(quickEdit.url)) {
+      setStatus('只支持 http 或 https 地址')
+      return
+    }
+
+    const saved = await saveDirectDashboard({
+      ...dashboard,
+      groups: dashboard.groups.map((group) =>
+        group.id === quickEdit.groupId
+          ? {
+              ...group,
+              links: group.links.map((link) =>
+                link.id === quickEdit.linkId
+                  ? {
+                      ...link,
+                      title: quickEdit.title,
+                      url: normalizeUrl(quickEdit.url),
+                      icon: quickEdit.icon.trim() || undefined,
+                    }
+                  : link,
+              ),
+            }
+          : group,
+      ),
+    })
+
+    if (saved) {
+      setQuickEdit(null)
+    }
+  }
+
+  function deleteGroupDirect(groupId: string) {
+    if (!dashboard) {
+      return
+    }
+
+    if (!confirm('删除这个分组和里面的所有网站？')) {
+      return
+    }
+
+    void saveDirectDashboard({
+      ...dashboard,
+      groups: dashboard.groups.filter((group) => group.id !== groupId),
+    })
+  }
+
+  function deleteLinkDirect(groupId: string, linkId: string) {
+    if (!dashboard) {
+      return
+    }
+
+    if (!confirm('删除这个网站？')) {
+      return
+    }
+
+    void saveDirectDashboard({
+      ...dashboard,
+      groups: dashboard.groups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              links: group.links.filter((link) => link.id !== linkId),
+            }
+          : group,
+      ),
+    })
   }
 
   function addGroup() {
@@ -477,6 +670,7 @@ function App() {
 
     const first = visibleLinkItems[0]
     if (first) {
+      recordLinkClick(first.groupId, first.link.id)
       window.open(normalizeUrl(first.link.url), '_blank', 'noopener,noreferrer')
     }
   }
@@ -662,17 +856,41 @@ function App() {
           <div className="sidebar-label">分组</div>
           <div className="group-tabs">
             {dashboard.groups.map((group) => (
-              <button
-                type="button"
+              <div
                 className={`group-tab ${
                   group.id === activeGroup?.id ? 'is-active' : ''
                 }`}
-                onClick={() => setActiveGroupId(group.id)}
                 key={group.id}
               >
-                <span className="group-tab-name">{group.name}</span>
-                <span className="group-tab-count">{group.links.length}</span>
-              </button>
+                <button
+                  type="button"
+                  className="group-tab-main"
+                  onClick={() => setActiveGroupId(group.id)}
+                >
+                  <span className="group-tab-name">{group.name}</span>
+                  <span className="group-tab-count">{group.links.length}</span>
+                </button>
+                <div className="quick-actions">
+                  <button
+                    type="button"
+                    className="quick-icon-button"
+                    onClick={() => startGroupQuickEdit(group.id)}
+                    aria-label={`编辑分组 ${group.name}`}
+                    title="编辑分组"
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-icon-button danger"
+                    onClick={() => deleteGroupDirect(group.id)}
+                    aria-label={`删除分组 ${group.name}`}
+                    title="删除分组"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
         </aside>
@@ -847,26 +1065,49 @@ function App() {
                     ) : null}
                   </article>
                 ) : (
-                  <a
-                    className="link-card"
-                    href={normalizeUrl(link.url)}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    key={link.id}
-                  >
-                    <img
-                      src={link.icon || faviconUrl(link.url)}
-                      alt=""
-                      onError={(event) => {
-                        event.currentTarget.style.display = 'none'
-                      }}
-                    />
-                    <span>{link.title}</span>
-                    <small>{normalizeUrl(link.url).replace(/^https?:\/\//, '')}</small>
-                    {isGlobalSearch ? (
-                      <em className="link-group-name">{groupName}</em>
-                    ) : null}
-                  </a>
+                  <article className="link-card-shell" key={link.id}>
+                    <a
+                      className="link-card"
+                      href={normalizeUrl(link.url)}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      onClick={() => recordLinkClick(groupId, link.id)}
+                    >
+                      <img
+                        src={link.icon || faviconUrl(link.url)}
+                        alt=""
+                        onError={(event) => {
+                          event.currentTarget.style.display = 'none'
+                        }}
+                      />
+                      <span>{link.title}</span>
+                      <small>{normalizeUrl(link.url).replace(/^https?:\/\//, '')}</small>
+                      <strong className="click-count">点击 {link.clickCount ?? 0} 次</strong>
+                      {isGlobalSearch ? (
+                        <em className="link-group-name">{groupName}</em>
+                      ) : null}
+                    </a>
+                    <div className="card-actions">
+                      <button
+                        type="button"
+                        className="quick-icon-button"
+                        onClick={() => startLinkQuickEdit(groupId, link.id)}
+                        aria-label={`编辑网站 ${link.title}`}
+                        title="编辑网站"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
+                        className="quick-icon-button danger"
+                        onClick={() => deleteLinkDirect(groupId, link.id)}
+                        aria-label={`删除网站 ${link.title}`}
+                        title="删除网站"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </article>
                 ),
               )}
             </div>
@@ -895,6 +1136,127 @@ function App() {
           <section className="empty-panel">还没有分组，进入编辑模式后新增分组</section>
         )}
       </section>
+
+      {quickEdit ? (
+        <div className="modal-backdrop">
+          <form
+            className="quick-edit-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={quickEdit.kind === 'group' ? '编辑分组' : '编辑网站'}
+            onSubmit={(event) => {
+              event.preventDefault()
+              void saveQuickEdit()
+            }}
+          >
+            <div className="quick-edit-heading">
+              <h2>{quickEdit.kind === 'group' ? '编辑分组' : '编辑网站'}</h2>
+              <button
+                type="button"
+                className="quick-icon-button"
+                onClick={() => setQuickEdit(null)}
+                aria-label="关闭"
+                title="关闭"
+              >
+                ×
+              </button>
+            </div>
+
+            {quickEdit.kind === 'group' ? (
+              <label className="field-label">
+                分组名称
+                <input
+                  value={quickEdit.name}
+                  onChange={(event) =>
+                    setQuickEdit((current) =>
+                      current?.kind === 'group'
+                        ? {
+                            ...current,
+                            name: event.target.value,
+                          }
+                        : current,
+                    )
+                  }
+                  aria-label="分组名称"
+                  autoFocus
+                />
+              </label>
+            ) : (
+              <>
+                <label className="field-label">
+                  网站名称
+                  <input
+                    value={quickEdit.title}
+                    onChange={(event) =>
+                      setQuickEdit((current) =>
+                        current?.kind === 'link'
+                          ? {
+                              ...current,
+                              title: event.target.value,
+                            }
+                          : current,
+                      )
+                    }
+                    aria-label="网站名称"
+                    autoFocus
+                  />
+                </label>
+                <label className="field-label">
+                  网站地址
+                  <input
+                    value={quickEdit.url}
+                    onChange={(event) =>
+                      setQuickEdit((current) =>
+                        current?.kind === 'link'
+                          ? {
+                              ...current,
+                              url: event.target.value,
+                            }
+                          : current,
+                      )
+                    }
+                    aria-label="网站地址"
+                  />
+                </label>
+                <label className="field-label">
+                  图标地址
+                  <input
+                    value={quickEdit.icon}
+                    onChange={(event) =>
+                      setQuickEdit((current) =>
+                        current?.kind === 'link'
+                          ? {
+                              ...current,
+                              icon: event.target.value,
+                            }
+                          : current,
+                      )
+                    }
+                    placeholder="可留空，默认自动获取 favicon"
+                    aria-label="图标地址"
+                  />
+                </label>
+                {!isSafeUrl(quickEdit.url) ? (
+                  <span className="field-error">只支持 http 或 https 地址</span>
+                ) : null}
+              </>
+            )}
+
+            <div className="row-actions modal-actions">
+              <button type="submit" className="primary-button" disabled={isSaving}>
+                {isSaving ? '保存中' : '保存'}
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setQuickEdit(null)}
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </main>
   )
 }

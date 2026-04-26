@@ -89,6 +89,27 @@ function saveChromeDashboard(dashboard: DashboardData): Promise<boolean> {
   return saveChromeValue(LOCAL_DASHBOARD_KEY, dashboard)
 }
 
+async function persistDashboard(dashboard: DashboardData): Promise<SaveResult> {
+  try {
+    const savedToChrome = await saveChromeDashboard(dashboard)
+
+    if (savedToChrome) {
+      return {
+        mode: 'chrome',
+        updatedAt: dashboard.updatedAt,
+      }
+    }
+  } catch {
+    // Fall through to localStorage so local development still works.
+  }
+
+  saveLocalDashboard(dashboard)
+  return {
+    mode: 'local',
+    updatedAt: dashboard.updatedAt,
+  }
+}
+
 async function loadStoredDashboard() {
   try {
     const chromeData = await loadChromeDashboard()
@@ -123,24 +144,21 @@ export async function saveDashboard(dashboard: DashboardData): Promise<SaveResul
     await saveDashboardBackup(previous)
   }
 
-  try {
-    const savedToChrome = await saveChromeDashboard(updated)
+  return persistDashboard(updated)
+}
 
-    if (savedToChrome) {
-      return {
-        mode: 'chrome',
-        updatedAt: updated.updatedAt,
-      }
-    }
-  } catch {
-    // Fall through to localStorage so local development still works.
+export async function saveDashboardSnapshot(dashboard: DashboardData): Promise<SaveResult> {
+  const updated: DashboardData = sanitizeDashboard({
+    ...dashboard,
+    updatedAt: new Date().toISOString(),
+  })
+
+  const invalidLinks = findInvalidLinks(updated)
+  if (invalidLinks.length > 0) {
+    throw new Error(`存在无效网址：${invalidLinks[0]}`)
   }
 
-  saveLocalDashboard(updated)
-  return {
-    mode: 'local',
-    updatedAt: updated.updatedAt,
-  }
+  return persistDashboard(updated)
 }
 
 export function loadLocalDashboard() {

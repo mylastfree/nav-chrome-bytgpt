@@ -106,6 +106,7 @@ export function createEmptyLink(): LinkItem {
     id: createId('link'),
     title: '新网站',
     url: 'https://example.com',
+    clickCount: 0,
   }
 }
 
@@ -121,6 +122,12 @@ export function moveItem<T>(items: T[], fromIndex: number, direction: -1 | 1) {
   next.splice(targetIndex, 0, item)
 
   return next
+}
+
+export function normalizeClickCount(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0
 }
 
 export function sanitizeDashboard(input: DashboardData): DashboardData {
@@ -145,9 +152,35 @@ export function sanitizeDashboard(input: DashboardData): DashboardData {
               title: link.title?.trim() || getHostname(link.url) || '未命名网站',
               url: normalizeUrl(link.url),
               icon: link.icon?.trim() || undefined,
+              clickCount: normalizeClickCount(link.clickCount),
             }))
         : [],
     })),
+  }
+}
+
+export function incrementLinkClickCount(
+  input: DashboardData,
+  groupId: string,
+  linkId: string,
+): DashboardData {
+  return {
+    ...input,
+    groups: input.groups.map((group) =>
+      group.id === groupId
+        ? {
+            ...group,
+            links: group.links.map((link) =>
+              link.id === linkId
+                ? {
+                    ...link,
+                    clickCount: normalizeClickCount(link.clickCount) + 1,
+                  }
+                : link,
+            ),
+          }
+        : group,
+    ),
   }
 }
 

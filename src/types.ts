@@ -3,6 +3,7 @@ export type LinkItem = {
   title: string
   url: string
   icon?: string
+  clickCount?: number
 }
 
 export type LinkGroup = {
