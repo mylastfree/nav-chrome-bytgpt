@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent } from 'react'
+import type { DragEvent, KeyboardEvent, MouseEvent } from 'react'
 import {
   loadDashboard,
   loadDashboardBackups,
@@ -19,7 +19,9 @@ import {
   isSafeUrl,
   moveItem,
   moveLinksToGroup,
+  nextThemePreference,
   normalizeUrl,
+  reorderLinkInGroup,
 } from './dashboard'
 import { parseDashboardImport } from './importers'
 import type { ParsedDashboardImport } from './importers'
@@ -68,6 +70,9 @@ function App() {
   const [isCheckingLinks, setIsCheckingLinks] = useState(false)
   const [linkCheckProgress, setLinkCheckProgress] = useState({ done: 0, total: 0 })
   const [linkCheckResults, setLinkCheckResults] = useState<LinkCheckResult[]>([])
+  const [draggingLinkId, setDraggingLinkId] = useState('')
+  const [dragOverLinkId, setDragOverLinkId] = useState('')
+  const [suppressedClickLinkId, setSuppressedClickLinkId] = useState('')
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   async function refreshBackups() {
@@ -215,6 +220,7 @@ function App() {
 
   const isGlobalSearch =
     !isEditing && searchScope === 'all' && query.trim().length > 0
+  const canDragSortLinks = Boolean(activeGroup && !isEditing && !isGlobalSearch)
   const selectedCount = selectedLinkIds.size
 
   function updateDashboard(updater: (current: DashboardData) => DashboardData) {
@@ -312,6 +318,39 @@ function App() {
       })
       .catch(() => {
         setStatus('点击统计保存失败')
+      })
+  }
+
+  function toggleFrontTheme() {
+    if (!dashboard) {
+      return
+    }
+
+    const theme = nextThemePreference(dashboard.settings.theme)
+    const nextDashboard = {
+      ...dashboard,
+      settings: {
+        ...dashboard.settings,
+        theme,
+      },
+    }
+
+    setDashboard(nextDashboard)
+    setStatus(theme === 'dark' ? '已切换到深色' : '已切换到浅色')
+
+    void saveDashboardSnapshot(nextDashboard)
+      .then((result) => {
+        setDashboard((current) =>
+          current
+            ? {
+                ...current,
+                updatedAt: result.updatedAt,
+              }
+            : current,
+        )
+      })
+      .catch(() => {
+        setStatus('主题保存失败')
       })
   }
 
@@ -700,6 +739,115 @@ function App() {
     }
   }
 
+  function resetLinkDrag() {
+    setDraggingLinkId('')
+    setDragOverLinkId('')
+  }
+
+  function handleLinkDragStart(
+    event: DragEvent<HTMLElement>,
+    groupId: string,
+    linkId: string,
+  ) {
+    if (!canDragSortLinks || groupId !== activeGroup?.id) {
+      event.preventDefault()
+      return
+    }
+
+    setDraggingLinkId(linkId)
+    setDragOverLinkId('')
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', linkId)
+  }
+
+  function handleLinkDragOver(
+    event: DragEvent<HTMLElement>,
+    groupId: string,
+    linkId: string,
+  ) {
+    if (
+      !canDragSortLinks ||
+      groupId !== activeGroup?.id ||
+      !draggingLinkId ||
+      draggingLinkId === linkId
+    ) {
+      return
+    }
+
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    setDragOverLinkId(linkId)
+  }
+
+  function handleLinkDrop(
+    event: DragEvent<HTMLElement>,
+    groupId: string,
+    targetLinkId: string,
+  ) {
+    event.preventDefault()
+
+    if (!dashboard || !canDragSortLinks || groupId !== activeGroup?.id) {
+      resetLinkDrag()
+      return
+    }
+
+    const draggedLinkId = event.dataTransfer.getData('text/plain') || draggingLinkId
+    resetLinkDrag()
+
+    if (!draggedLinkId || draggedLinkId === targetLinkId) {
+      return
+    }
+
+    const nextDashboard = reorderLinkInGroup(
+      dashboard,
+      groupId,
+      draggedLinkId,
+      targetLinkId,
+    )
+
+    if (nextDashboard === dashboard) {
+      return
+    }
+
+    setSuppressedClickLinkId(draggedLinkId)
+    window.setTimeout(() => {
+      setSuppressedClickLinkId((current) =>
+        current === draggedLinkId ? '' : current,
+      )
+    }, 250)
+    setDashboard(nextDashboard)
+    setStatus('正在保存排序...')
+
+    void saveDashboardSnapshot(nextDashboard)
+      .then((result) => {
+        setDashboard((current) =>
+          current
+            ? {
+                ...current,
+                updatedAt: result.updatedAt,
+              }
+            : current,
+        )
+        setStatus(result.mode === 'chrome' ? '排序已保存到 Chrome 本地存储' : '排序已保存到本机')
+      })
+      .catch(() => {
+        setStatus('排序保存失败')
+      })
+  }
+
+  function handleLinkCardClick(
+    event: MouseEvent<HTMLAnchorElement>,
+    groupId: string,
+    linkId: string,
+  ) {
+    if (suppressedClickLinkId === linkId || draggingLinkId === linkId) {
+      event.preventDefault()
+      return
+    }
+
+    recordLinkClick(groupId, linkId)
+  }
+
   function locateLink(groupId: string, linkId: string) {
     setIsEditing(true)
     setActiveGroupId(groupId)
@@ -852,6 +1000,15 @@ function App() {
             <option value="group">当前分组</option>
             <option value="all">全部分组</option>
           </select>
+          <button
+            type="button"
+            className="icon-button theme-toggle-button"
+            onClick={toggleFrontTheme}
+            aria-label={dashboard.settings.theme === 'dark' ? '切换浅色' : '切换深色'}
+            title={dashboard.settings.theme === 'dark' ? '切换浅色' : '切换深色'}
+          >
+            {dashboard.settings.theme === 'dark' ? '☀' : '☾'}
+          </button>
 
           {isEditing ? (
             <>
@@ -1271,17 +1428,36 @@ function App() {
                     ) : null}
                   </article>
                 ) : (
-                  <article className="link-card-shell" key={link.id}>
+                  <article
+                    className={`link-card-shell ${
+                      canDragSortLinks ? 'is-sortable' : ''
+                    } ${draggingLinkId === link.id ? 'is-dragging' : ''} ${
+                      dragOverLinkId === link.id ? 'is-drag-over' : ''
+                    }`}
+                    draggable={canDragSortLinks}
+                    key={link.id}
+                    onDragStart={(event) => handleLinkDragStart(event, groupId, link.id)}
+                    onDragOver={(event) => handleLinkDragOver(event, groupId, link.id)}
+                    onDrop={(event) => handleLinkDrop(event, groupId, link.id)}
+                    onDragEnd={resetLinkDrag}
+                    onDragLeave={() => {
+                      if (dragOverLinkId === link.id) {
+                        setDragOverLinkId('')
+                      }
+                    }}
+                  >
                     <a
                       className="link-card"
                       href={normalizeUrl(link.url)}
                       target="_blank"
                       rel="noreferrer noopener"
-                      onClick={() => recordLinkClick(groupId, link.id)}
+                      draggable={false}
+                      onClick={(event) => handleLinkCardClick(event, groupId, link.id)}
                     >
                       <img
                         src={link.icon || faviconUrl(link.url)}
                         alt=""
+                        draggable={false}
                         onError={(event) => {
                           event.currentTarget.style.display = 'none'
                         }}

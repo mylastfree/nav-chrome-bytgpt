@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest'
-import { findDuplicateLinkIds, findDuplicateLinks, moveLinksToGroup } from './dashboard'
+import {
+  findDuplicateLinkIds,
+  findDuplicateLinks,
+  moveLinksToGroup,
+  nextThemePreference,
+  reorderLinkInGroup,
+} from './dashboard'
 import { parseDashboardImport } from './importers'
 import type { DashboardData } from './types'
 
@@ -159,5 +165,20 @@ describe('dashboard organization helpers', () => {
       'github-b',
       'github-a',
     ])
+  })
+
+  test('reorders links inside the same group by dragged and target link ids', () => {
+    const moved = reorderLinkInGroup(dashboardWithDuplicates(), 'daily', 'openai', 'github-a')
+
+    expect(moved.groups[0].links.map((link) => link.id)).toEqual(['openai', 'github-a'])
+    expect(moved.groups[1].links.map((link) => link.id)).toEqual(['github-b'])
+  })
+})
+
+describe('dashboard preference helpers', () => {
+  test('toggles front theme preference between light and dark', () => {
+    expect(nextThemePreference('dark')).toBe('light')
+    expect(nextThemePreference('light')).toBe('dark')
+    expect(nextThemePreference('system')).toBe('dark')
   })
 })

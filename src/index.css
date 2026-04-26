@@ -473,6 +473,10 @@ button:focus-visible {
   font-weight: 780;
 }
 
+.theme-toggle-button {
+  font-size: 16px;
+}
+
 .quick-icon-button {
   display: inline-grid;
   width: 24px;
@@ -643,6 +647,20 @@ button:focus-visible {
 .link-card-shell {
   position: relative;
   min-width: 0;
+}
+
+.link-card-shell.is-sortable .link-card {
+  cursor: grab;
+}
+
+.link-card-shell.is-dragging .link-card {
+  opacity: 0.56;
+  transform: scale(0.98);
+}
+
+.link-card-shell.is-drag-over .link-card {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus), transparent 70%);
 }
 
 .link-card {

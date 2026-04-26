@@ -1,4 +1,5 @@
 import type { DashboardData, LinkGroup, LinkItem } from './types'
+import type { DashboardSettings } from './types'
 
 export const LOCAL_DASHBOARD_KEY = 'nav-bygpt-dashboard'
 
@@ -122,6 +123,30 @@ export function moveItem<T>(items: T[], fromIndex: number, direction: -1 | 1) {
   next.splice(targetIndex, 0, item)
 
   return next
+}
+
+export function moveItemToIndex<T>(items: T[], fromIndex: number, toIndex: number) {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length ||
+    fromIndex === toIndex
+  ) {
+    return items
+  }
+
+  const next = [...items]
+  const [item] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, item)
+
+  return next
+}
+
+export function nextThemePreference(
+  theme: DashboardSettings['theme'],
+): DashboardSettings['theme'] {
+  return theme === 'dark' ? 'light' : 'dark'
 }
 
 export function normalizeClickCount(value: unknown) {
@@ -309,6 +334,45 @@ export function moveLinksToGroup(
         : group,
     ),
   }
+}
+
+export function reorderLinkInGroup(
+  input: DashboardData,
+  groupId: string,
+  draggedLinkId: string,
+  targetLinkId: string,
+): DashboardData {
+  if (draggedLinkId === targetLinkId) {
+    return input
+  }
+
+  let changed = false
+  const groups = input.groups.map((group) => {
+    if (group.id !== groupId) {
+      return group
+    }
+
+    const fromIndex = group.links.findIndex((link) => link.id === draggedLinkId)
+    const toIndex = group.links.findIndex((link) => link.id === targetLinkId)
+    const links = moveItemToIndex(group.links, fromIndex, toIndex)
+
+    if (links === group.links) {
+      return group
+    }
+
+    changed = true
+    return {
+      ...group,
+      links,
+    }
+  })
+
+  return changed
+    ? {
+        ...input,
+        groups,
+      }
+    : input
 }
 
 export function deleteLinks(input: DashboardData, selectedLinkIds: Set<string>): DashboardData {
