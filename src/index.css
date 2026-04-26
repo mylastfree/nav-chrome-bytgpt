@@ -359,15 +359,15 @@ button:focus-visible {
 
 .quick-icon-button {
   display: inline-grid;
-  width: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  width: 24px;
+  min-width: 24px;
+  min-height: 24px;
   padding: 0;
   place-items: center;
   border-color: color-mix(in srgb, var(--border), transparent 20%);
   background: color-mix(in srgb, var(--surface), transparent 4%);
   color: var(--muted-strong);
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 780;
   line-height: 1;
 }
@@ -454,7 +454,7 @@ button:focus-visible {
 .quick-actions,
 .card-actions {
   display: flex;
-  gap: 4px;
+  gap: 3px;
   align-items: center;
 }
 
@@ -613,8 +613,8 @@ button:focus-visible {
 
 .card-actions {
   position: absolute;
-  top: 9px;
-  right: 9px;
+  top: 8px;
+  right: 8px;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
