@@ -4,6 +4,14 @@ export type LinkItem = {
   url: string
   icon?: string
   clickCount?: number
+  check?: LinkHealth
+}
+
+export type LinkHealth = {
+  status: 'ok' | 'limited' | 'broken'
+  reason: string
+  checkedAt: string
+  confirmedAt?: string
 }
 
 export type LinkGroup = {

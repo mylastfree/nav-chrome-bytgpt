@@ -1,4 +1,4 @@
-import type { DashboardData, LinkGroup, LinkItem } from './types'
+import type { DashboardData, LinkGroup, LinkHealth, LinkItem } from './types'
 import type { DashboardSettings } from './types'
 
 export const LOCAL_DASHBOARD_KEY = 'nav-bygpt-dashboard'
@@ -155,6 +155,35 @@ export function normalizeClickCount(value: unknown) {
     : 0
 }
 
+function normalizeLinkHealth(value: unknown): LinkHealth | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const health = value as Partial<LinkHealth>
+  const status = health.status
+  const reason = typeof health.reason === 'string' ? health.reason.trim() : ''
+  const checkedAt = typeof health.checkedAt === 'string' ? health.checkedAt : ''
+  const confirmedAt =
+    typeof health.confirmedAt === 'string' && health.confirmedAt
+      ? health.confirmedAt
+      : undefined
+
+  if (
+    (status !== 'ok' && status !== 'limited' && status !== 'broken') ||
+    !checkedAt
+  ) {
+    return undefined
+  }
+
+  return {
+    status,
+    reason,
+    checkedAt,
+    confirmedAt,
+  }
+}
+
 function createUniqueId(prefix: string, usedIds: Set<string>, preferredId: unknown) {
   const normalized = typeof preferredId === 'string' ? preferredId.trim() : ''
 
@@ -197,6 +226,7 @@ export function sanitizeDashboard(input: DashboardData): DashboardData {
               url: normalizeUrl(link.url),
               icon: link.icon?.trim() || undefined,
               clickCount: normalizeClickCount(link.clickCount),
+              check: normalizeLinkHealth(link.check),
             }))
         : [],
     })),

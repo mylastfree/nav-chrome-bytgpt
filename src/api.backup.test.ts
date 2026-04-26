@@ -121,4 +121,20 @@ describe('dashboard backups', () => {
 
     expect(backups.map((backup) => backup.id)).toEqual(['valid'])
   })
+
+  test('keeps only the latest 20 backups', async () => {
+    const chromeStore: Record<string, unknown> = {
+      [LOCAL_DASHBOARD_KEY]: dashboardWith('1'),
+      [BACKUP_DASHBOARD_KEY]: Array.from({ length: 25 }, (_, index) => ({
+        id: `backup-${index}`,
+        createdAt: `2026-04-26T00:00:${String(index).padStart(2, '0')}.000Z`,
+        dashboard: dashboardWith('2'),
+      })),
+    }
+    stubChromeStorage(chromeStore)
+
+    await saveDashboard(dashboardWith('3'))
+
+    expect(chromeStore[BACKUP_DASHBOARD_KEY]).toHaveLength(20)
+  })
 })

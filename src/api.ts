@@ -7,7 +7,7 @@ import {
 import type { DashboardBackup, DashboardData, SaveResult } from './types'
 
 export const BACKUP_DASHBOARD_KEY = `${LOCAL_DASHBOARD_KEY}-backups`
-const MAX_BACKUPS = 10
+const MAX_BACKUPS = 20
 
 type ChromeStorageArea = {
   get: (key: string, callback: (items: Record<string, unknown>) => void) => void

@@ -239,12 +239,58 @@ h2 {
   background: color-mix(in srgb, var(--surface), var(--primary-soft) 46%);
 }
 
+.health-panel,
+.undo-panel {
+  background: color-mix(in srgb, var(--surface), var(--primary-soft) 42%);
+}
+
 .maintenance-heading {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+}
+
+.health-grid,
+.import-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+  gap: 8px;
+}
+
+.health-grid span,
+.import-preview-grid span {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.backup-list {
+  display: grid;
+  gap: 8px;
+}
+
+.backup-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.backup-card span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .check-progress,
@@ -332,7 +378,9 @@ h2 {
 }
 
 .check-actions .ghost-button,
-.duplicate-occurrence .ghost-button {
+.duplicate-occurrence .ghost-button,
+.duplicate-card > .row-actions .ghost-button,
+.backup-card .ghost-button {
   min-height: 32px;
   padding: 6px 9px;
   font-size: 12px;
