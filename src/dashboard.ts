@@ -155,10 +155,29 @@ export function normalizeClickCount(value: unknown) {
     : 0
 }
 
+function createUniqueId(prefix: string, usedIds: Set<string>, preferredId: unknown) {
+  const normalized = typeof preferredId === 'string' ? preferredId.trim() : ''
+
+  if (normalized && !usedIds.has(normalized)) {
+    usedIds.add(normalized)
+    return normalized
+  }
+
+  let generated = createId(prefix)
+  while (usedIds.has(generated)) {
+    generated = createId(prefix)
+  }
+
+  usedIds.add(generated)
+  return generated
+}
+
 export function sanitizeDashboard(input: DashboardData): DashboardData {
   const groups = Array.isArray(input.groups) ? input.groups : []
   const title = input.settings?.title?.trim() || '我的导航'
   const theme = input.settings?.theme
+  const groupIds = new Set<string>()
+  const linkIds = new Set<string>()
 
   return {
     version: 1,
@@ -168,12 +187,12 @@ export function sanitizeDashboard(input: DashboardData): DashboardData {
       theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : 'system',
     },
     groups: groups.map((group) => ({
-      id: group.id || createId('group'),
+      id: createUniqueId('group', groupIds, group.id),
       name: group.name?.trim() || '未命名分组',
       links: Array.isArray(group.links)
         ? group.links
             .map((link) => ({
-              id: link.id || createId('link'),
+              id: createUniqueId('link', linkIds, link.id),
               title: link.title?.trim() || getHostname(link.url) || '未命名网站',
               url: normalizeUrl(link.url),
               icon: link.icon?.trim() || undefined,

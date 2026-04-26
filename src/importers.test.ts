@@ -2,11 +2,17 @@ import { describe, expect, test } from 'vitest'
 import {
   findDuplicateLinkIds,
   findDuplicateLinks,
+  sanitizeDashboard,
   moveLinksToGroup,
   nextThemePreference,
   reorderLinkInGroup,
 } from './dashboard'
-import { parseDashboardImport } from './importers'
+import {
+  MAX_IMPORT_FILE_BYTES,
+  MAX_IMPORT_LINKS,
+  isImportFileTooLarge,
+  parseDashboardImport,
+} from './importers'
 import type { DashboardData } from './types'
 
 function dashboardWithDuplicates(): DashboardData {
@@ -50,6 +56,32 @@ function dashboardWithDuplicates(): DashboardData {
 }
 
 describe('import parsing', () => {
+  test('rejects import files larger than the local safety limit before reading them', () => {
+    expect(isImportFileTooLarge({ size: MAX_IMPORT_FILE_BYTES })).toBe(false)
+    expect(isImportFileTooLarge({ size: MAX_IMPORT_FILE_BYTES + 1 })).toBe(true)
+  })
+
+  test('rejects imports with too many links for local storage', () => {
+    const dashboard = sanitizeDashboard({
+      ...dashboardWithDuplicates(),
+      groups: [
+        {
+          id: 'large',
+          name: 'Large',
+          links: Array.from({ length: MAX_IMPORT_LINKS + 1 }, (_, index) => ({
+            id: `link-${index}`,
+            title: `Link ${index}`,
+            url: `https://example.com/${index}`,
+          })),
+        },
+      ],
+    })
+
+    expect(() => parseDashboardImport('large.json', JSON.stringify(dashboard))).toThrow(
+      'import contains too many links',
+    )
+  })
+
   test('parses the app dashboard JSON directly', () => {
     const dashboard = dashboardWithDuplicates()
     const result = parseDashboardImport('backup.json', JSON.stringify(dashboard))

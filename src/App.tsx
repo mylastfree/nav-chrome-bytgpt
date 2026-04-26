@@ -23,7 +23,7 @@ import {
   normalizeUrl,
   reorderLinkInGroup,
 } from './dashboard'
-import { parseDashboardImport } from './importers'
+import { isImportFileTooLarge, parseDashboardImport } from './importers'
 import type { ParsedDashboardImport } from './importers'
 import { checkDashboardLinks, dismissLinkCheckResult } from './linkChecker'
 import type { LinkCheckResult } from './linkChecker'
@@ -622,6 +622,11 @@ function App() {
     }
 
     try {
+      if (isImportFileTooLarge(file)) {
+        setStatus('导入文件超过 10MB，请先拆分或精简后再导入')
+        return
+      }
+
       const text = await file.text()
       const imported = parseDashboardImport(file.name, text)
       setPendingImport(imported)
@@ -1459,7 +1464,7 @@ function App() {
                         alt=""
                         draggable={false}
                         onError={(event) => {
-                          event.currentTarget.style.display = 'none'
+                          event.currentTarget.style.visibility = 'hidden'
                         }}
                       />
                       <span>{link.title}</span>

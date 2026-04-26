@@ -28,6 +28,46 @@ function dashboardWithClicks(clickCount?: unknown): DashboardData {
 }
 
 describe('dashboard click statistics', () => {
+  test('deduplicates imported group and link ids while preserving first occurrences', () => {
+    const sanitized = sanitizeDashboard({
+      ...dashboardWithClicks(),
+      groups: [
+        {
+          id: 'daily',
+          name: 'Daily',
+          links: [
+            {
+              id: 'github',
+              title: 'GitHub',
+              url: 'https://github.com',
+            },
+            {
+              id: 'github',
+              title: 'GitHub duplicate',
+              url: 'https://github.com/mylastfree',
+            },
+          ],
+        },
+        {
+          id: 'daily',
+          name: 'Daily duplicate',
+          links: [
+            {
+              id: 'github',
+              title: 'GitHub third',
+              url: 'https://github.com/openai',
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(sanitized.groups[0].id).toBe('daily')
+    expect(sanitized.groups[1].id).not.toBe('daily')
+    expect(sanitized.groups[0].links[0].id).toBe('github')
+    expect(new Set(sanitized.groups.flatMap((group) => group.links.map((link) => link.id))).size).toBe(3)
+  })
+
   test('normalizes missing or invalid click counts to zero', () => {
     expect(sanitizeDashboard(dashboardWithClicks()).groups[0].links[0].clickCount).toBe(0)
     expect(sanitizeDashboard(dashboardWithClicks(-3)).groups[0].links[0].clickCount).toBe(0)
