@@ -4,7 +4,10 @@ import {
   sampleDashboard,
   sanitizeDashboard,
 } from './dashboard'
-import type { DashboardData, SaveResult } from './types'
+import type { DashboardBackup, DashboardData, SaveResult } from './types'
+
+export const BACKUP_DASHBOARD_KEY = `${LOCAL_DASHBOARD_KEY}-backups`
+const MAX_BACKUPS = 10
 
 type ChromeStorageArea = {
   get: (key: string, callback: (items: Record<string, unknown>) => void) => void
@@ -34,7 +37,7 @@ function getChromeStorageError() {
   return getChrome()?.runtime?.lastError?.message
 }
 
-function loadChromeDashboard(): Promise<DashboardData | null> {
+function loadChromeValue<T>(key: string): Promise<T | null> {
   const storage = getChromeStorage()
 
   if (!storage) {
@@ -42,7 +45,7 @@ function loadChromeDashboard(): Promise<DashboardData | null> {
   }
 
   return new Promise((resolve, reject) => {
-    storage.get(LOCAL_DASHBOARD_KEY, (items) => {
+    storage.get(key, (items) => {
       const error = getChromeStorageError()
 
       if (error) {
@@ -50,13 +53,13 @@ function loadChromeDashboard(): Promise<DashboardData | null> {
         return
       }
 
-      const raw = items[LOCAL_DASHBOARD_KEY]
-      resolve(raw ? sanitizeDashboard(raw as DashboardData) : null)
+      const raw = items[key]
+      resolve(raw ? (raw as T) : null)
     })
   })
 }
 
-function saveChromeDashboard(dashboard: DashboardData): Promise<boolean> {
+function saveChromeValue(key: string, value: unknown): Promise<boolean> {
   const storage = getChromeStorage()
 
   if (!storage) {
@@ -64,7 +67,7 @@ function saveChromeDashboard(dashboard: DashboardData): Promise<boolean> {
   }
 
   return new Promise((resolve, reject) => {
-    storage.set({ [LOCAL_DASHBOARD_KEY]: dashboard }, () => {
+    storage.set({ [key]: value }, () => {
       const error = getChromeStorageError()
 
       if (error) {
@@ -77,7 +80,16 @@ function saveChromeDashboard(dashboard: DashboardData): Promise<boolean> {
   })
 }
 
-export async function loadDashboard(): Promise<DashboardData> {
+async function loadChromeDashboard(): Promise<DashboardData | null> {
+  const raw = await loadChromeValue<DashboardData>(LOCAL_DASHBOARD_KEY)
+  return raw ? sanitizeDashboard(raw) : null
+}
+
+function saveChromeDashboard(dashboard: DashboardData): Promise<boolean> {
+  return saveChromeValue(LOCAL_DASHBOARD_KEY, dashboard)
+}
+
+async function loadStoredDashboard() {
   try {
     const chromeData = await loadChromeDashboard()
 
@@ -85,10 +97,14 @@ export async function loadDashboard(): Promise<DashboardData> {
       return chromeData
     }
   } catch {
-    // Keep the page usable even if extension storage is temporarily unavailable.
+    // Keep save usable even if extension storage is temporarily unavailable.
   }
 
-  return loadLocalDashboard() ?? sampleDashboard
+  return loadLocalDashboard()
+}
+
+export async function loadDashboard(): Promise<DashboardData> {
+  return (await loadStoredDashboard()) ?? sampleDashboard
 }
 
 export async function saveDashboard(dashboard: DashboardData): Promise<SaveResult> {
@@ -100,6 +116,11 @@ export async function saveDashboard(dashboard: DashboardData): Promise<SaveResul
   const invalidLinks = findInvalidLinks(updated)
   if (invalidLinks.length > 0) {
     throw new Error(`存在无效网址：${invalidLinks[0]}`)
+  }
+
+  const previous = await loadStoredDashboard()
+  if (previous) {
+    await saveDashboardBackup(previous)
   }
 
   try {
@@ -141,4 +162,85 @@ export function saveLocalDashboard(dashboard: DashboardData) {
   }
 
   localStorage.setItem(LOCAL_DASHBOARD_KEY, JSON.stringify(dashboard))
+}
+
+function sanitizeBackups(input: unknown): DashboardBackup[] {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return input
+    .filter((entry): entry is Partial<DashboardBackup> => {
+      return Boolean(entry) && typeof entry === 'object'
+    })
+    .flatMap((entry) => {
+      const createdAt =
+        typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString()
+
+      try {
+        return [
+          {
+            id: typeof entry.id === 'string' ? entry.id : `backup-${createdAt}`,
+            createdAt,
+            dashboard: sanitizeDashboard(entry.dashboard as DashboardData),
+          },
+        ]
+      } catch {
+        return []
+      }
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, MAX_BACKUPS)
+}
+
+export async function loadDashboardBackups(): Promise<DashboardBackup[]> {
+  try {
+    const chromeBackups = await loadChromeValue<unknown>(BACKUP_DASHBOARD_KEY)
+
+    if (chromeBackups) {
+      return sanitizeBackups(chromeBackups)
+    }
+  } catch {
+    // Fall through to localStorage for development and storage failures.
+  }
+
+  try {
+    if (typeof localStorage === 'undefined') {
+      return []
+    }
+
+    const raw = localStorage.getItem(BACKUP_DASHBOARD_KEY)
+    return raw ? sanitizeBackups(JSON.parse(raw)) : []
+  } catch {
+    return []
+  }
+}
+
+async function saveDashboardBackups(backups: DashboardBackup[]) {
+  try {
+    const savedToChrome = await saveChromeValue(BACKUP_DASHBOARD_KEY, backups)
+
+    if (savedToChrome) {
+      return
+    }
+  } catch {
+    // Fall through to localStorage so local development still works.
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(BACKUP_DASHBOARD_KEY, JSON.stringify(backups))
+  }
+}
+
+export async function saveDashboardBackup(dashboard: DashboardData) {
+  const createdAt = new Date().toISOString()
+  const previousBackups = await loadDashboardBackups()
+  const backup: DashboardBackup = {
+    id: `backup-${Date.now()}`,
+    createdAt,
+    dashboard: sanitizeDashboard(dashboard),
+  }
+
+  await saveDashboardBackups([backup, ...previousBackups].slice(0, MAX_BACKUPS))
+  return backup
 }

@@ -167,3 +167,143 @@ export function findInvalidLinks(input: DashboardData) {
       .map((link) => `${group.name} / ${link.title || link.url || '未命名网站'}`),
   )
 }
+
+export type LinkOccurrence = {
+  groupId: string
+  groupName: string
+  link: LinkItem
+  linkIndex: number
+}
+
+export type DuplicateLinkGroup = {
+  url: string
+  occurrences: LinkOccurrence[]
+}
+
+export function comparableUrl(value: string) {
+  try {
+    const url = new URL(normalizeUrl(value))
+    url.hash = ''
+    url.hostname = url.hostname.toLocaleLowerCase()
+
+    if (url.pathname !== '/') {
+      url.pathname = url.pathname.replace(/\/+$/, '')
+    }
+
+    return url.toString()
+  } catch {
+    return normalizeUrl(value).trim().toLocaleLowerCase()
+  }
+}
+
+export function findDuplicateLinks(input: DashboardData): DuplicateLinkGroup[] {
+  const byUrl = new Map<string, LinkOccurrence[]>()
+
+  input.groups.forEach((group) => {
+    group.links.forEach((link, linkIndex) => {
+      const key = comparableUrl(link.url)
+      const occurrences = byUrl.get(key) ?? []
+
+      occurrences.push({
+        groupId: group.id,
+        groupName: group.name,
+        link,
+        linkIndex,
+      })
+      byUrl.set(key, occurrences)
+    })
+  })
+
+  return [...byUrl.entries()]
+    .filter(([, occurrences]) => occurrences.length > 1)
+    .map(([url, occurrences]) => ({
+      url,
+      occurrences,
+    }))
+}
+
+export function moveLinksToGroup(
+  input: DashboardData,
+  selectedLinkIds: Set<string>,
+  targetGroupId: string,
+): DashboardData {
+  if (selectedLinkIds.size === 0) {
+    return input
+  }
+
+  const moving: LinkItem[] = []
+  const groups = input.groups.map((group) => {
+    if (group.id === targetGroupId) {
+      return group
+    }
+
+    const remaining: LinkItem[] = []
+
+    group.links.forEach((link) => {
+      if (selectedLinkIds.has(link.id)) {
+        moving.push(link)
+      } else {
+        remaining.push(link)
+      }
+    })
+
+    return {
+      ...group,
+      links: remaining,
+    }
+  })
+
+  if (moving.length === 0) {
+    return input
+  }
+
+  return {
+    ...input,
+    groups: groups.map((group) =>
+      group.id === targetGroupId
+        ? {
+            ...group,
+            links: [...group.links, ...moving],
+          }
+        : group,
+    ),
+  }
+}
+
+export function deleteLinks(input: DashboardData, selectedLinkIds: Set<string>): DashboardData {
+  if (selectedLinkIds.size === 0) {
+    return input
+  }
+
+  return {
+    ...input,
+    groups: input.groups.map((group) => ({
+      ...group,
+      links: group.links.filter((link) => !selectedLinkIds.has(link.id)),
+    })),
+  }
+}
+
+export function clearLinkIcons(
+  input: DashboardData,
+  selectedLinkIds: Set<string>,
+): DashboardData {
+  if (selectedLinkIds.size === 0) {
+    return input
+  }
+
+  return {
+    ...input,
+    groups: input.groups.map((group) => ({
+      ...group,
+      links: group.links.map((link) =>
+        selectedLinkIds.has(link.id)
+          ? {
+              ...link,
+              icon: undefined,
+            }
+          : link,
+      ),
+    })),
+  }
+}

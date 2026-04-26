@@ -23,6 +23,12 @@ export type DashboardData = {
   settings: DashboardSettings
 }
 
+export type DashboardBackup = {
+  id: string
+  createdAt: string
+  dashboard: DashboardData
+}
+
 export type SaveResult = {
   mode: 'chrome' | 'local'
   updatedAt: string
