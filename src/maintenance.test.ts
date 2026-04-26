@@ -6,6 +6,7 @@ import {
   confirmLinkCheckResult,
   createImportPreview,
   getDashboardHealth,
+  summarizeDashboard,
   mergeImportedDashboard,
   removeDuplicateLinksByUrl,
 } from './maintenance'
@@ -189,5 +190,12 @@ describe('maintenance helpers', () => {
     expect(health.brokenCount).toBe(1)
     expect(health.lastBackupAt).toBe('2026-04-26T01:00:00.000Z')
     expect(health.storageBytes).toBeGreaterThan(100)
+  })
+
+  test('summarizes a dashboard for backup cards', () => {
+    expect(summarizeDashboard(dashboard())).toEqual({
+      groupCount: 2,
+      linkCount: 3,
+    })
   })
 })

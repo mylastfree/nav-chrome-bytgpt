@@ -41,6 +41,7 @@ import {
   getStoredLinkCheckResults,
   mergeImportedDashboard,
   removeDuplicateLinksByUrl,
+  summarizeDashboard,
 } from './maintenance'
 import type {
   CardLayout,
@@ -958,12 +959,20 @@ function App() {
     setStatus('已取消导入')
   }
 
-  function restoreBackup(backup: DashboardBackup | undefined) {
+  async function restoreBackup(backup: DashboardBackup | undefined) {
     if (!backup || !dashboard) {
       return
     }
 
     if (!confirm(`恢复 ${new Date(backup.createdAt).toLocaleString()} 的备份？当前未保存修改会被覆盖。`)) {
+      return
+    }
+
+    try {
+      await saveDashboardBackup(dashboard)
+      await refreshBackups()
+    } catch {
+      setStatus('恢复前备份失败，请先导出当前数据再重试')
       return
     }
 
@@ -1372,7 +1381,7 @@ function App() {
               <button
                 type="button"
                 className="ghost-button"
-                onClick={() => restoreBackup(backups[0])}
+                onClick={() => void restoreBackup(backups[0])}
                 disabled={backups.length === 0}
               >
                 恢复上次备份
@@ -1559,7 +1568,7 @@ function App() {
             <button
               type="button"
               className="ghost-button"
-              onClick={() => restoreBackup(backups[0])}
+              onClick={() => void restoreBackup(backups[0])}
               disabled={backups.length === 0}
             >
               恢复最近备份
@@ -1576,18 +1585,25 @@ function App() {
           </div>
           {backups.length > 0 ? (
             <div className="backup-list">
-              {backups.slice(0, 5).map((backup) => (
-                <article className="backup-card" key={backup.id}>
-                  <span>{new Date(backup.createdAt).toLocaleString()}</span>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => restoreBackup(backup)}
-                  >
-                    恢复
-                  </button>
-                </article>
-              ))}
+              {backups.slice(0, 5).map((backup) => {
+                const summary = summarizeDashboard(backup.dashboard)
+
+                return (
+                  <article className="backup-card" key={backup.id}>
+                    <span>{new Date(backup.createdAt).toLocaleString()}</span>
+                    <small>
+                      {summary.groupCount} 个分组 · {summary.linkCount} 个网站
+                    </small>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => void restoreBackup(backup)}
+                    >
+                      恢复
+                    </button>
+                  </article>
+                )
+              })}
             </div>
           ) : null}
         </section>
@@ -1635,6 +1651,9 @@ function App() {
             </select>
           </label>
           <div className="row-actions">
+            <button type="button" className="ghost-button" onClick={exportJson}>
+              先导出当前数据
+            </button>
             <button type="button" className="primary-button" onClick={confirmImport}>
               确认导入
             </button>

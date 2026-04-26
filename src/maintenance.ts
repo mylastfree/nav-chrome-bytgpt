@@ -25,8 +25,20 @@ export type DashboardHealth = {
   storageBytes: number
 }
 
+export type DashboardSummary = {
+  groupCount: number
+  linkCount: number
+}
+
 export function countDashboardLinks(dashboard: DashboardData) {
   return dashboard.groups.reduce((count, group) => count + group.links.length, 0)
+}
+
+export function summarizeDashboard(dashboard: DashboardData): DashboardSummary {
+  return {
+    groupCount: dashboard.groups.length,
+    linkCount: countDashboardLinks(dashboard),
+  }
 }
 
 export function createImportPreview(
