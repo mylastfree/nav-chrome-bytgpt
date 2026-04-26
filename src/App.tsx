@@ -13,6 +13,7 @@ import {
   createEmptyLink,
   deleteLinks,
   faviconUrl,
+  findDuplicateLinkIds,
   findDuplicateLinks,
   incrementLinkClickCount,
   isSafeUrl,
@@ -22,6 +23,8 @@ import {
 } from './dashboard'
 import { parseDashboardImport } from './importers'
 import type { ParsedDashboardImport } from './importers'
+import { checkDashboardLinks } from './linkChecker'
+import type { LinkCheckResult } from './linkChecker'
 import type { DashboardBackup, DashboardData, LinkItem } from './types'
 
 type SearchScope = 'group' | 'all'
@@ -61,6 +64,10 @@ function App() {
   const [backups, setBackups] = useState<DashboardBackup[]>([])
   const [pendingImport, setPendingImport] = useState<ParsedDashboardImport | null>(null)
   const [quickEdit, setQuickEdit] = useState<QuickEditDraft | null>(null)
+  const [highlightedLinkId, setHighlightedLinkId] = useState('')
+  const [isCheckingLinks, setIsCheckingLinks] = useState(false)
+  const [linkCheckProgress, setLinkCheckProgress] = useState({ done: 0, total: 0 })
+  const [linkCheckResults, setLinkCheckResults] = useState<LinkCheckResult[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   async function refreshBackups() {
@@ -189,6 +196,22 @@ function App() {
   const duplicateLinks = useMemo(() => {
     return dashboard ? findDuplicateLinks(dashboard) : []
   }, [dashboard])
+
+  const duplicateLinkIds = useMemo(() => {
+    return findDuplicateLinkIds(duplicateLinks)
+  }, [duplicateLinks])
+
+  const brokenLinkResults = useMemo(() => {
+    return linkCheckResults.filter((item) => item.status === 'broken')
+  }, [linkCheckResults])
+
+  const limitedLinkResults = useMemo(() => {
+    return linkCheckResults.filter((item) => item.status === 'limited')
+  }, [linkCheckResults])
+
+  const okLinkCount = useMemo(() => {
+    return linkCheckResults.filter((item) => item.status === 'ok').length
+  }, [linkCheckResults])
 
   const isGlobalSearch =
     !isEditing && searchScope === 'all' && query.trim().length > 0
@@ -397,11 +420,11 @@ function App() {
 
   function deleteLinkDirect(groupId: string, linkId: string) {
     if (!dashboard) {
-      return
+      return false
     }
 
     if (!confirm('删除这个网站？')) {
-      return
+      return false
     }
 
     void saveDirectDashboard({
@@ -412,9 +435,11 @@ function App() {
               ...group,
               links: group.links.filter((link) => link.id !== linkId),
             }
-          : group,
+        : group,
       ),
     })
+    setLinkCheckResults((current) => current.filter((item) => item.linkId !== linkId))
+    return true
   }
 
   function addGroup() {
@@ -675,6 +700,101 @@ function App() {
     }
   }
 
+  function locateLink(groupId: string, linkId: string) {
+    setIsEditing(true)
+    setActiveGroupId(groupId)
+    setSearchScope('group')
+    setQuery('')
+    setHighlightedLinkId(linkId)
+
+    window.setTimeout(() => {
+      document
+        .getElementById(`link-editor-${linkId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 80)
+
+    window.setTimeout(() => {
+      setHighlightedLinkId((current) => (current === linkId ? '' : current))
+    }, 2600)
+  }
+
+  async function runLinkCheck() {
+    if (!dashboard || isCheckingLinks) {
+      return
+    }
+
+    setIsCheckingLinks(true)
+    setLinkCheckResults([])
+    setLinkCheckProgress({ done: 0, total: totalLinks })
+    setStatus('正在批量检测网址...')
+
+    try {
+      const results = await checkDashboardLinks(dashboard, {
+        concurrency: 5,
+        timeoutMs: 8000,
+        onProgress: (done, total) => setLinkCheckProgress({ done, total }),
+      })
+      const brokenCount = results.filter((item) => item.status === 'broken').length
+      const limitedCount = results.filter((item) => item.status === 'limited').length
+
+      setLinkCheckResults(results)
+      setStatus(`检测完成：${brokenCount} 个疑似失效，${limitedCount} 个受限或异常`)
+    } catch {
+      setStatus('批量检测失败，请稍后重试')
+    } finally {
+      setIsCheckingLinks(false)
+    }
+  }
+
+  function renderCheckResult(item: LinkCheckResult) {
+    return (
+      <article className={`check-result is-${item.status}`} key={item.linkId}>
+        <div className="check-result-main">
+          <strong>{item.title}</strong>
+          <span>
+            {item.groupName} · {item.url}
+          </span>
+        </div>
+        <span className="check-reason">{item.reason}</span>
+        <div className="row-actions check-actions">
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => locateLink(item.groupId, item.linkId)}
+          >
+            定位
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => {
+              locateLink(item.groupId, item.linkId)
+              startLinkQuickEdit(item.groupId, item.linkId)
+            }}
+          >
+            编辑
+          </button>
+          <button
+            type="button"
+            className="ghost-button danger"
+            onClick={() => deleteLinkDirect(item.groupId, item.linkId)}
+          >
+            删除
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() =>
+              window.open(normalizeUrl(item.url), '_blank', 'noopener,noreferrer')
+            }
+          >
+            打开
+          </button>
+        </div>
+      </article>
+    )
+  }
+
   if (!dashboard) {
     return (
       <main className="page-shell">
@@ -851,6 +971,59 @@ function App() {
         </section>
       ) : null}
 
+      {isEditing ? (
+        <section className="notice-panel maintenance-panel">
+          <div className="maintenance-heading">
+            <div>
+              <strong>网址维护</strong>
+              <span>
+                {linkCheckResults.length > 0
+                  ? `上次检测：正常 ${okLinkCount} 个，疑似失效 ${brokenLinkResults.length} 个，受限或异常 ${limitedLinkResults.length} 个`
+                  : '批量检测当前全部网址，集中查看疑似失效链接。'}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={runLinkCheck}
+              disabled={isCheckingLinks || totalLinks === 0}
+            >
+              {isCheckingLinks ? '检测中' : '批量检测网址'}
+            </button>
+          </div>
+
+          {isCheckingLinks ? (
+            <span className="check-progress">
+              正在检测 {linkCheckProgress.done} / {linkCheckProgress.total}
+            </span>
+          ) : null}
+
+          {linkCheckResults.length > 0 ? (
+            <div className="check-results">
+              <section className="check-result-section">
+                <h3>疑似失效</h3>
+                {brokenLinkResults.length > 0 ? (
+                  <div className="check-result-list">
+                    {brokenLinkResults.map((item) => renderCheckResult(item))}
+                  </div>
+                ) : (
+                  <span className="check-empty">没有发现疑似失效链接。</span>
+                )}
+              </section>
+
+              {limitedLinkResults.length > 0 ? (
+                <section className="check-result-section">
+                  <h3>受限或异常</h3>
+                  <div className="check-result-list">
+                    {limitedLinkResults.map((item) => renderCheckResult(item))}
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="dashboard-layout">
         <aside className="group-sidebar" aria-label="分组">
           <div className="sidebar-label">分组</div>
@@ -959,26 +1132,48 @@ function App() {
             </div>
 
             {isEditing && duplicateLinks.length > 0 ? (
-              <section className="notice-panel compact-notice">
+              <section className="notice-panel compact-notice duplicate-panel">
                 <div>
                   <strong>发现 {duplicateLinks.length} 组重复网址</strong>
-                  <span>先定位确认，再手动删除或批量整理。</span>
+                  <span>重复卡片已高亮，先定位确认，再手动删除或批量整理。</span>
                 </div>
-                <ul className="compact-list">
-                  {duplicateLinks.slice(0, 5).map((duplicate) => (
-                    <li key={duplicate.url}>
-                      {duplicate.occurrences.map((item) => item.groupName).join(' / ')}：
-                      {duplicate.occurrences[0].link.title}
-                    </li>
+                <div className="duplicate-list">
+                  {duplicateLinks.map((duplicate) => (
+                    <article className="duplicate-card" key={duplicate.url}>
+                      <div className="duplicate-url">{duplicate.url}</div>
+                      {duplicate.occurrences.map((item) => (
+                        <div className="duplicate-occurrence" key={item.link.id}>
+                          <span>
+                            {item.groupName} / {item.link.title}
+                          </span>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => locateLink(item.groupId, item.link.id)}
+                          >
+                            定位
+                          </button>
+                        </div>
+                      ))}
+                    </article>
                   ))}
-                </ul>
+                </div>
               </section>
             ) : null}
 
             <div className="link-grid">
               {visibleLinkItems.map(({ groupId, groupName, link, linkIndex }) =>
                 isEditing ? (
-                  <article className="link-editor" key={link.id}>
+                  <article
+                    id={`link-editor-${link.id}`}
+                    className={`link-editor ${
+                      duplicateLinkIds.has(link.id) ? 'is-duplicate' : ''
+                    } ${highlightedLinkId === link.id ? 'is-located' : ''}`}
+                    key={link.id}
+                  >
+                    {duplicateLinkIds.has(link.id) ? (
+                      <span className="editor-badge">重复</span>
+                    ) : null}
                     <div className="editor-line">
                       <label className="select-link">
                         <input

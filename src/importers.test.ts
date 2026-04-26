@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { findDuplicateLinks, moveLinksToGroup } from './dashboard'
+import { findDuplicateLinkIds, findDuplicateLinks, moveLinksToGroup } from './dashboard'
 import { parseDashboardImport } from './importers'
 import type { DashboardData } from './types'
 
@@ -143,6 +143,12 @@ describe('dashboard organization helpers', () => {
       'GitHub A',
       'GitHub B',
     ])
+  })
+
+  test('returns every duplicated link id for editor highlighting', () => {
+    const duplicateIds = findDuplicateLinkIds(findDuplicateLinks(dashboardWithDuplicates()))
+
+    expect([...duplicateIds].sort()).toEqual(['github-a', 'github-b'])
   })
 
   test('moves selected links into the target group without duplicating target links', () => {

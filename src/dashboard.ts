@@ -255,6 +255,14 @@ export function findDuplicateLinks(input: DashboardData): DuplicateLinkGroup[] {
     }))
 }
 
+export function findDuplicateLinkIds(duplicates: DuplicateLinkGroup[]) {
+  return new Set(
+    duplicates.flatMap((duplicate) =>
+      duplicate.occurrences.map((occurrence) => occurrence.link.id),
+    ),
+  )
+}
+
 export function moveLinksToGroup(
   input: DashboardData,
   selectedLinkIds: Set<string>,
