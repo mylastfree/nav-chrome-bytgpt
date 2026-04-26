@@ -418,19 +418,19 @@ button:focus-visible {
 
 .link-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px;
 }
 
 .link-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
   grid-template-rows: auto auto;
-  column-gap: 11px;
-  row-gap: 2px;
+  column-gap: 13px;
+  row-gap: 3px;
   align-items: center;
-  min-height: 70px;
-  padding: 13px;
+  min-height: 86px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-muted);
@@ -452,8 +452,8 @@ button:focus-visible {
 
 .link-card img {
   grid-row: 1 / span 2;
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 42px;
   border-radius: 8px;
   background: var(--surface);
 }
@@ -467,14 +467,14 @@ button:focus-visible {
 }
 
 .link-card span {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 760;
   line-height: 1.25;
 }
 
 .link-card small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.25;
 }
 
