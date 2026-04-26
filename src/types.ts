@@ -17,12 +17,31 @@ export type LinkHealth = {
 export type LinkGroup = {
   id: string
   name: string
+  color?: GroupColor
   links: LinkItem[]
+}
+
+export type CardLayout = 'comfortable' | 'compact' | 'list'
+export type GroupColor = 'slate' | 'blue' | 'green' | 'amber' | 'rose' | 'purple' | 'teal'
+export type WallpaperIntensity = 'normal' | 'soft'
+export type WallpaperPreset =
+  | 'none'
+  | 'paper'
+  | 'dark-desk'
+  | 'blue-gray'
+  | 'soft-green'
+  | 'warm-gray'
+
+export type WallpaperSettings = {
+  preset: WallpaperPreset
+  intensity: WallpaperIntensity
 }
 
 export type DashboardSettings = {
   title: string
   theme: 'light' | 'dark' | 'system'
+  cardLayout?: CardLayout
+  wallpaper?: WallpaperSettings
 }
 
 export type DashboardData = {

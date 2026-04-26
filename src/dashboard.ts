@@ -1,7 +1,36 @@
-import type { DashboardData, LinkGroup, LinkHealth, LinkItem } from './types'
+import type {
+  CardLayout,
+  DashboardData,
+  GroupColor,
+  LinkGroup,
+  LinkHealth,
+  LinkItem,
+  WallpaperIntensity,
+  WallpaperPreset,
+  WallpaperSettings,
+} from './types'
 import type { DashboardSettings } from './types'
 
 export const LOCAL_DASHBOARD_KEY = 'nav-bygpt-dashboard'
+export const CARD_LAYOUT_OPTIONS: CardLayout[] = ['comfortable', 'compact', 'list']
+export const GROUP_COLOR_OPTIONS: GroupColor[] = [
+  'slate',
+  'blue',
+  'green',
+  'amber',
+  'rose',
+  'purple',
+  'teal',
+]
+export const WALLPAPER_PRESET_OPTIONS: WallpaperPreset[] = [
+  'none',
+  'paper',
+  'dark-desk',
+  'blue-gray',
+  'soft-green',
+  'warm-gray',
+]
+export const WALLPAPER_INTENSITY_OPTIONS: WallpaperIntensity[] = ['normal', 'soft']
 
 export const sampleDashboard: DashboardData = {
   version: 1,
@@ -9,11 +38,17 @@ export const sampleDashboard: DashboardData = {
   settings: {
     title: '我的导航',
     theme: 'system',
+    cardLayout: 'comfortable',
+    wallpaper: {
+      preset: 'none',
+      intensity: 'normal',
+    },
   },
   groups: [
     {
       id: 'daily',
       name: '常用',
+      color: 'blue',
       links: [
         {
           id: 'chatgpt',
@@ -35,6 +70,7 @@ export const sampleDashboard: DashboardData = {
     {
       id: 'tools',
       name: '工具',
+      color: 'teal',
       links: [
         {
           id: 'workers-docs',
@@ -98,6 +134,7 @@ export function createEmptyGroup(): LinkGroup {
   return {
     id: createId('group'),
     name: '新分组',
+    color: 'slate',
     links: [],
   }
 }
@@ -153,6 +190,36 @@ export function normalizeClickCount(value: unknown) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? Math.floor(value)
     : 0
+}
+
+function normalizeCardLayout(value: unknown): CardLayout {
+  return CARD_LAYOUT_OPTIONS.includes(value as CardLayout)
+    ? (value as CardLayout)
+    : 'comfortable'
+}
+
+function normalizeGroupColor(value: unknown): GroupColor {
+  return GROUP_COLOR_OPTIONS.includes(value as GroupColor)
+    ? (value as GroupColor)
+    : 'slate'
+}
+
+function normalizeWallpaper(value: unknown): WallpaperSettings {
+  const wallpaper =
+    value && typeof value === 'object' ? (value as Partial<WallpaperSettings>) : {}
+  const preset = WALLPAPER_PRESET_OPTIONS.includes(wallpaper.preset as WallpaperPreset)
+    ? (wallpaper.preset as WallpaperPreset)
+    : 'none'
+  const intensity = WALLPAPER_INTENSITY_OPTIONS.includes(
+    wallpaper.intensity as WallpaperIntensity,
+  )
+    ? (wallpaper.intensity as WallpaperIntensity)
+    : 'normal'
+
+  return {
+    preset,
+    intensity,
+  }
 }
 
 function normalizeLinkHealth(value: unknown): LinkHealth | undefined {
@@ -214,10 +281,13 @@ export function sanitizeDashboard(input: DashboardData): DashboardData {
     settings: {
       title,
       theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : 'system',
+      cardLayout: normalizeCardLayout(input.settings?.cardLayout),
+      wallpaper: normalizeWallpaper(input.settings?.wallpaper),
     },
     groups: groups.map((group) => ({
       id: createUniqueId('group', groupIds, group.id),
       name: group.name?.trim() || '未命名分组',
+      color: normalizeGroupColor(group.color),
       links: Array.isArray(group.links)
         ? group.links
             .map((link) => ({

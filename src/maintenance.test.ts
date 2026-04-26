@@ -95,6 +95,11 @@ describe('maintenance helpers', () => {
     expect(merged.settings).toEqual({
       title: 'Current nav',
       theme: 'dark',
+      cardLayout: 'comfortable',
+      wallpaper: {
+        preset: 'none',
+        intensity: 'normal',
+      },
     })
     expect(merged.groups.map((group) => group.name)).toEqual([
       'Daily',
