@@ -1,11 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  clearAdminToken,
-  loadAdminToken,
-  loadDashboard,
-  saveAdminToken,
-  saveDashboard,
-} from './api'
+import { loadDashboard, saveDashboard } from './api'
 import {
   createEmptyGroup,
   createEmptyLink,
@@ -21,9 +15,6 @@ function App() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [query, setQuery] = useState('')
   const [isEditing, setIsEditing] = useState(false)
-  const [adminToken, setAdminToken] = useState(loadAdminToken)
-  const [tokenDraft, setTokenDraft] = useState('')
-  const [showTokenForm, setShowTokenForm] = useState(false)
   const [status, setStatus] = useState('正在加载...')
   const [isSaving, setIsSaving] = useState(false)
   const [activeGroupId, setActiveGroupId] = useState('')
@@ -129,45 +120,14 @@ function App() {
     setStatus('有未保存修改')
   }
 
-  function unlockEditing(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const token = tokenDraft.trim()
-
-    if (!token) {
-      setStatus('请输入管理员密码')
-      return
-    }
-
-    saveAdminToken(token)
-    setAdminToken(token)
-    setTokenDraft('')
-    setShowTokenForm(false)
+  function startEditing() {
     setIsEditing(true)
     setStatus('已进入编辑模式')
   }
 
-  function startEditing() {
-    if (adminToken) {
-      setIsEditing(true)
-      setStatus('已进入编辑模式')
-      return
-    }
-
-    setShowTokenForm(true)
-  }
-
   function lockEditing() {
     setIsEditing(false)
-    setShowTokenForm(false)
     setStatus('已退出编辑模式')
-  }
-
-  function forgetToken() {
-    clearAdminToken()
-    setAdminToken('')
-    setIsEditing(false)
-    setShowTokenForm(false)
-    setStatus('已清除本机保存的管理员密码')
   }
 
   async function handleSave() {
@@ -179,7 +139,7 @@ function App() {
     setStatus('正在保存...')
 
     try {
-      const result = await saveDashboard(dashboard, adminToken)
+      const result = await saveDashboard(dashboard)
       setDashboard((current) =>
         current
           ? {
@@ -188,7 +148,7 @@ function App() {
             }
           : current,
       )
-      setStatus(result.mode === 'cloud' ? '已保存到 Cloudflare KV' : '已保存到本机')
+      setStatus(result.mode === 'chrome' ? '已保存到 Chrome 本地存储' : '已保存到本机')
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '保存失败')
     } finally {
@@ -340,7 +300,7 @@ function App() {
       const text = await file.text()
       const imported = sanitizeDashboard(JSON.parse(text))
       setDashboard(imported)
-      setStatus('已导入 JSON，点击保存后写入 Cloudflare KV')
+      setStatus('已导入 JSON，点击保存后写入本地存储')
     } catch {
       setStatus('导入失败，请检查 JSON 文件')
     } finally {
@@ -433,36 +393,10 @@ function App() {
         </div>
       </header>
 
-      {showTokenForm ? (
-        <form className="token-panel" onSubmit={unlockEditing}>
-          <input
-            type="password"
-            value={tokenDraft}
-            onChange={(event) => setTokenDraft(event.target.value)}
-            placeholder="管理员密码"
-            aria-label="管理员密码"
-            autoFocus
-          />
-          <button type="submit" className="primary-button">
-            解锁
-          </button>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => setShowTokenForm(false)}
-          >
-            取消
-          </button>
-        </form>
-      ) : null}
-
       {isEditing ? (
         <section className="editor-actions">
           <button type="button" className="ghost-button" onClick={addGroup}>
             新增分组
-          </button>
-          <button type="button" className="ghost-button danger" onClick={forgetToken}>
-            清除密码
           </button>
           <input
             ref={fileInputRef}

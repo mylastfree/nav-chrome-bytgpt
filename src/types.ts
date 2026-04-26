@@ -24,6 +24,6 @@ export type DashboardData = {
 }
 
 export type SaveResult = {
-  mode: 'cloud' | 'local'
+  mode: 'chrome' | 'local'
   updatedAt: string
 }

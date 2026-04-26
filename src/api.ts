@@ -1,95 +1,133 @@
 import {
   findInvalidLinks,
-  LOCAL_ADMIN_TOKEN_KEY,
   LOCAL_DASHBOARD_KEY,
   sampleDashboard,
   sanitizeDashboard,
 } from './dashboard'
 import type { DashboardData, SaveResult } from './types'
 
-export async function loadDashboard(): Promise<DashboardData> {
-  const localData = loadLocalDashboard()
-
-  try {
-    const response = await fetch('/api/dashboard', {
-      headers: {
-        accept: 'application/json',
-      },
-    })
-
-    if (response.ok) {
-      const remoteData = sanitizeDashboard(await response.json())
-      saveLocalDashboard(remoteData)
-      return remoteData
-    }
-  } catch {
-    // Vite dev server has no Pages Function, so local data keeps the app usable.
-  }
-
-  return localData ?? sampleDashboard
+type ChromeStorageArea = {
+  get: (key: string, callback: (items: Record<string, unknown>) => void) => void
+  set: (items: Record<string, unknown>, callback?: () => void) => void
 }
 
-export async function saveDashboard(
-  dashboard: DashboardData,
-  adminToken: string,
-): Promise<SaveResult> {
+type ChromeLike = {
+  runtime?: {
+    lastError?: {
+      message?: string
+    }
+  }
+  storage?: {
+    local?: ChromeStorageArea
+  }
+}
+
+function getChrome() {
+  return (globalThis as typeof globalThis & { chrome?: ChromeLike }).chrome
+}
+
+function getChromeStorage() {
+  return getChrome()?.storage?.local ?? null
+}
+
+function getChromeStorageError() {
+  return getChrome()?.runtime?.lastError?.message
+}
+
+function loadChromeDashboard(): Promise<DashboardData | null> {
+  const storage = getChromeStorage()
+
+  if (!storage) {
+    return Promise.resolve(null)
+  }
+
+  return new Promise((resolve, reject) => {
+    storage.get(LOCAL_DASHBOARD_KEY, (items) => {
+      const error = getChromeStorageError()
+
+      if (error) {
+        reject(new Error(error))
+        return
+      }
+
+      const raw = items[LOCAL_DASHBOARD_KEY]
+      resolve(raw ? sanitizeDashboard(raw as DashboardData) : null)
+    })
+  })
+}
+
+function saveChromeDashboard(dashboard: DashboardData): Promise<boolean> {
+  const storage = getChromeStorage()
+
+  if (!storage) {
+    return Promise.resolve(false)
+  }
+
+  return new Promise((resolve, reject) => {
+    storage.set({ [LOCAL_DASHBOARD_KEY]: dashboard }, () => {
+      const error = getChromeStorageError()
+
+      if (error) {
+        reject(new Error(error))
+        return
+      }
+
+      resolve(true)
+    })
+  })
+}
+
+export async function loadDashboard(): Promise<DashboardData> {
+  try {
+    const chromeData = await loadChromeDashboard()
+
+    if (chromeData) {
+      return chromeData
+    }
+  } catch {
+    // Keep the page usable even if extension storage is temporarily unavailable.
+  }
+
+  return loadLocalDashboard() ?? sampleDashboard
+}
+
+export async function saveDashboard(dashboard: DashboardData): Promise<SaveResult> {
   const updated: DashboardData = sanitizeDashboard({
     ...dashboard,
     updatedAt: new Date().toISOString(),
   })
-
-  saveLocalDashboard(updated)
 
   const invalidLinks = findInvalidLinks(updated)
   if (invalidLinks.length > 0) {
     throw new Error(`存在无效网址：${invalidLinks[0]}`)
   }
 
-  if (!adminToken.trim()) {
-    throw new Error('请输入管理员密码后再保存。')
+  try {
+    const savedToChrome = await saveChromeDashboard(updated)
+
+    if (savedToChrome) {
+      return {
+        mode: 'chrome',
+        updatedAt: updated.updatedAt,
+      }
+    }
+  } catch {
+    // Fall through to localStorage so local development still works.
   }
 
-  try {
-    const response = await fetch('/api/dashboard', {
-      method: 'PUT',
-      headers: {
-        authorization: `Bearer ${adminToken.trim()}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(updated),
-    })
-
-    if (response.ok) {
-      const result = (await response.json()) as SaveResult
-      return {
-        mode: 'cloud',
-        updatedAt: result.updatedAt || updated.updatedAt,
-      }
-    }
-
-    if (response.status === 404) {
-      return {
-        mode: 'local',
-        updatedAt: updated.updatedAt,
-      }
-    }
-
-    const message = await response.text()
-    throw new Error(message || `保存失败，HTTP ${response.status}`)
-  } catch (error) {
-    if (error instanceof TypeError) {
-      return {
-        mode: 'local',
-        updatedAt: updated.updatedAt,
-      }
-    }
-
-    throw error
+  saveLocalDashboard(updated)
+  return {
+    mode: 'local',
+    updatedAt: updated.updatedAt,
   }
 }
 
 export function loadLocalDashboard() {
   try {
+    if (typeof localStorage === 'undefined') {
+      return null
+    }
+
     const raw = localStorage.getItem(LOCAL_DASHBOARD_KEY)
     return raw ? sanitizeDashboard(JSON.parse(raw)) : null
   } catch {
@@ -98,17 +136,9 @@ export function loadLocalDashboard() {
 }
 
 export function saveLocalDashboard(dashboard: DashboardData) {
+  if (typeof localStorage === 'undefined') {
+    return
+  }
+
   localStorage.setItem(LOCAL_DASHBOARD_KEY, JSON.stringify(dashboard))
-}
-
-export function loadAdminToken() {
-  return localStorage.getItem(LOCAL_ADMIN_TOKEN_KEY) || ''
-}
-
-export function saveAdminToken(token: string) {
-  localStorage.setItem(LOCAL_ADMIN_TOKEN_KEY, token)
-}
-
-export function clearAdminToken() {
-  localStorage.removeItem(LOCAL_ADMIN_TOKEN_KEY)
 }

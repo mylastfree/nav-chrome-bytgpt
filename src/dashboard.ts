@@ -1,7 +1,6 @@
 import type { DashboardData, LinkGroup, LinkItem } from './types'
 
-export const LOCAL_DASHBOARD_KEY = 'cf-startpage-dashboard'
-export const LOCAL_ADMIN_TOKEN_KEY = 'cf-startpage-admin-token'
+export const LOCAL_DASHBOARD_KEY = 'nav-bygpt-dashboard'
 
 export const sampleDashboard: DashboardData = {
   version: 1,
@@ -16,9 +15,9 @@ export const sampleDashboard: DashboardData = {
       name: '常用',
       links: [
         {
-          id: 'cloudflare',
-          title: 'Cloudflare',
-          url: 'https://dash.cloudflare.com',
+          id: 'chatgpt',
+          title: 'ChatGPT',
+          url: 'https://chatgpt.com',
         },
         {
           id: 'github',
