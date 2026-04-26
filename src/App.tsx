@@ -1082,7 +1082,7 @@ function App() {
                       />
                       <span>{link.title}</span>
                       <small>{normalizeUrl(link.url).replace(/^https?:\/\//, '')}</small>
-                      <strong className="click-count">点击 {link.clickCount ?? 0} 次</strong>
+                      <strong className="click-count">{link.clickCount ?? 0}</strong>
                       {isGlobalSearch ? (
                         <em className="link-group-name">{groupName}</em>
                       ) : null}
